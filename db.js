@@ -4,9 +4,9 @@ const mysql = require('mysql2/promise');
 const pool = mysql.createPool({
     host: 'localhost',
     user: 'root',
-    password: 'root123',
+    password: '',
     database: 'Calificaciones',
-    port: 3306, // puerto utilizado en mySQL
+    port: 3307, // puerto utilizado en mySQL
 });
 
 // const promisePool = pool.promise();
