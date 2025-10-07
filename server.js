@@ -135,7 +135,7 @@ app.get('/api/alumnos', [checkToken, esProfesor], async (req, res) => {
 });
 
 
-
+// Mensaje en consola muestra el servicio funcionando
 app.listen(port, () => {
     console.log(`Servidor corriendo en http://localhost:${port}`);  
 });
