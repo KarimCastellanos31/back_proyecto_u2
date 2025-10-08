@@ -6,7 +6,7 @@ const pool = mysql.createPool({
     user: 'root',
     password: '',
     database: 'Calificaciones',
-    port: 3307, // puerto utilizado en mySQL
+    port: 3306, // puerto utilizado en mySQL
 });
 
 // const promisePool = pool.promise();
