@@ -11,20 +11,15 @@ app.use(express.json()); // Para poder recibir datos JSON desde la app
 // ... (El endpoint de /login no cambia) ...
 app.post('/login', async (req, res) => {
     const { username, password } = req.body;
-
     if (!username || !password) {
         return res.status(400).json({ success: false, message: 'Usuario y contraseña son requeridos' });
     }
-
     try {
         const [rows] = await pool.query('SELECT * FROM usuarios WHERE username = ?', [username]);
-
         if (rows.length === 0) {
             return res.json({ success: false, message: 'Usuario o contraseña incorrectos' });
         }
-
         const user = rows[0];
-
         if (password === user.password) {
             res.json({ success: true, message: 'Inicio de sesión exitoso', user });
         } else {
@@ -48,44 +43,32 @@ app.get('/mis-calificaciones/:id', async (req, res) => {
 });
 
 
-// --- ENDPOINTS PARA PROFESORES (CRUD) ---
+// --- ENDPOINTS PARA PROFESORES (CRUD DE ALUMNOS Y CALIFICACIONES) ---
 
 // GET: Devolver la lista de todos los alumnos (sin cambios)
 app.get('/alumnos', async (req, res) => {
     try {
-        const [alumnos] = await pool.query("SELECT id_user, nombre, apellido FROM usuarios WHERE tipo_user = 'alumno'");
+        const [alumnos] = await pool.query("SELECT id_user, nombre, apellido, username FROM usuarios WHERE tipo_user = 'alumno'");
         res.json({ success: true, alumnos });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Error al obtener la lista de alumnos' });
     }
 });
 
-// --- NUEVO ENDPOINT PARA CREAR ALUMNOS ---
+// POST: Crear un nuevo alumno (sin cambios)
 app.post('/alumnos', async (req, res) => {
     const { nombre, apellido, username, password } = req.body;
     if (!nombre || !apellido || !username || !password) {
         return res.status(400).json({ success: false, message: 'Todos los campos son requeridos.' });
     }
-    
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
-
-        const [userResult] = await connection.query(
-            'INSERT INTO usuarios (nombre, apellido, tipo_user, username, password) VALUES (?, ?, ?, ?, ?)',
-            [nombre, apellido, 'alumno', username, password]
-        );
-        
+        const [userResult] = await connection.query('INSERT INTO usuarios (nombre, apellido, tipo_user, username, password) VALUES (?, ?, ?, ?, ?)', [nombre, apellido, 'alumno', username, password]);
         const newUserId = userResult.insertId;
-
-        await connection.query(
-            'INSERT INTO alumnos_prop (id_alumno, estado) VALUES (?, ?)',
-            [newUserId, 'alta']
-        );
-
+        await connection.query('INSERT INTO alumnos_prop (id_alumno, estado) VALUES (?, ?)',[newUserId, 'alta']);
         await connection.commit();
         res.status(201).json({ success: true, message: 'Alumno agregado correctamente.' });
-
     } catch (error) {
         await connection.rollback();
         console.error('Error en POST /alumnos:', error);
@@ -93,6 +76,56 @@ app.post('/alumnos', async (req, res) => {
             return res.status(409).json({ success: false, message: 'El nombre de usuario ya existe.' });
         }
         res.status(500).json({ success: false, message: 'Error en el servidor al agregar alumno.' });
+    } finally {
+        connection.release();
+    }
+});
+
+// --- NUEVO ENDPOINT PARA ACTUALIZAR ALUMNOS ---
+app.put('/alumnos/:id', async (req, res) => {
+    const { id } = req.params;
+    const { nombre, apellido, username } = req.body;
+    if (!nombre || !apellido || !username) {
+        return res.status(400).json({ success: false, message: 'Nombre, apellido y username son requeridos.' });
+    }
+    try {
+        await pool.query(
+            'UPDATE usuarios SET nombre = ?, apellido = ?, username = ? WHERE id_user = ?',
+            [nombre, apellido, username, id]
+        );
+        res.json({ success: true, message: 'Alumno actualizado correctamente.' });
+    } catch (error) {
+        console.error('Error en PUT /alumnos/:id:', error);
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ success: false, message: 'El nombre de usuario ya existe.' });
+        }
+        res.status(500).json({ success: false, message: 'Error al actualizar el alumno.' });
+    }
+});
+
+
+// --- NUEVO ENDPOINT PARA ELIMINAR ALUMNOS ---
+app.delete('/alumnos/:id', async (req, res) => {
+    const { id } = req.params;
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+        // Eliminar registros dependientes primero
+        await connection.query('DELETE FROM kardex WHERE id_alumno = ?', [id]);
+        await connection.query('DELETE FROM alumnos_prop WHERE id_alumno = ?', [id]);
+        // Finalmente, eliminar el usuario
+        const [result] = await connection.query('DELETE FROM usuarios WHERE id_user = ?', [id]);
+        
+        if (result.affectedRows === 0) {
+            throw new Error('Alumno no encontrado');
+        }
+
+        await connection.commit();
+        res.json({ success: true, message: 'Alumno eliminado correctamente.' });
+    } catch (error) {
+        await connection.rollback();
+        console.error('Error en DELETE /alumnos/:id:', error);
+        res.status(500).json({ success: false, message: 'Error al eliminar el alumno.' });
     } finally {
         connection.release();
     }
@@ -109,7 +142,6 @@ app.get('/calificaciones/:id', async (req, res) => {
         res.status(500).json({ success: false, message: 'Error al obtener las calificaciones del alumno' });
     }
 });
-
 app.post('/calificaciones', async (req, res) => {
     const { id_alumno, materia, calificacion } = req.body;
     try {
@@ -119,7 +151,6 @@ app.post('/calificaciones', async (req, res) => {
         res.status(500).json({ success: false, message: 'Error al agregar la calificación. ¿Quizás la materia ya existe para este alumno?' });
     }
 });
-
 app.put('/calificaciones', async (req, res) => {
     const { id_alumno, materia, calificacion } = req.body;
     try {
@@ -132,7 +163,6 @@ app.put('/calificaciones', async (req, res) => {
         res.status(500).json({ success: false, message: 'Error al actualizar la calificación' });
     }
 });
-
 app.delete('/calificaciones', async (req, res) => {
     const { id_alumno, materia } = req.query;
     try {
@@ -148,7 +178,7 @@ app.delete('/calificaciones', async (req, res) => {
 });
 
 
-app.listen(port, () => {
-    console.log(`Servidor corriendo en http://localhost:${port}`);
+app.listen(port, '0.0.0.0', () => {
+    console.log(`Servidor corriendo en todas las interfaces en el puerto ${port}`);
 });
 
